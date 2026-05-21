@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use tauri::State;
+use tauri::{Emitter, State};
 use uuid::Uuid;
 use chrono::Utc;
 

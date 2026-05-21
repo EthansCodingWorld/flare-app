@@ -9,6 +9,7 @@ mod watcher;
 use commands::DbState;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
 fn main() {
     tauri::Builder::default()
