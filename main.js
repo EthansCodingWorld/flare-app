@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, globalShortcut, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const os = require('os');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -26,6 +27,7 @@ let mainWindow;
 let db;
 let watcher;
 let linkServer;
+let obsWs = null;
 
 // ─── Database ────────────────────────────────────────────────────────────────
 
@@ -102,6 +104,15 @@ async function processClip(filePath) {
       'INSERT OR IGNORE INTO clips (id, filename, path, created_at, added_at, duration, size_bytes, thumbnail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, filename, filePath, createdAt, new Date().toISOString(), duration, sizeBytes, thumbnail);
     mainWindow?.webContents.send('clip-detected', { id, filename, path: filePath, duration, thumbnail });
+
+    // Auto-upload to platform if enabled
+    if (getConfig('platform_auto_upload') === '1') {
+      const platformUrl = getConfig('platform_url');
+      const token       = getConfig('platform_token');
+      if (platformUrl && token) {
+        ipcMain.emit('_auto-upload', null, { clipId: id });
+      }
+    }
   } catch (e) { console.error('Error inserting clip:', e); }
 }
 
@@ -260,6 +271,129 @@ ipcMain.handle('get-clip-link', (_, { clipId }) => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
+// ─── Platform integration ──────────────────────────────────────────────────────
+
+ipcMain.handle('set-platform-config', (_, { platformUrl, token, username }) => {
+  setConfig('platform_url',      platformUrl);
+  setConfig('platform_token',    token || '');
+  setConfig('platform_username', username || '');
+});
+
+ipcMain.handle('get-platform-config', () => ({
+  platformUrl: getConfig('platform_url')      || '',
+  token:       getConfig('platform_token')    || '',
+  username:    getConfig('platform_username') || '',
+}));
+
+ipcMain.handle('platform-login', async (_, { platformUrl, username, password }) => {
+  const url = platformUrl.replace(/\/$/, '') + '/api/auth/login';
+  const body = JSON.stringify({ username, password });
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? https : http;
+    const req = lib.request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode >= 400) return reject(new Error(json.error || 'Login failed'));
+          resolve(json);
+        } catch { reject(new Error('Invalid response from platform')); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+});
+
+ipcMain.handle('platform-upload-clip', async (_, { clipId }) => {
+  const clip        = db.prepare('SELECT * FROM clips WHERE id = ?').get(clipId);
+  if (!clip) throw new Error('Clip not found');
+  const platformUrl = getConfig('platform_url');
+  const token       = getConfig('platform_token');
+  if (!platformUrl || !token) throw new Error('Not connected to platform — open Platform settings first.');
+
+  const axios     = require('axios');
+  const FormData  = require('form-data');
+  const form      = new FormData();
+  form.append('clip',       fs.createReadStream(clip.path));
+  form.append('title',      clip.filename.replace(/\.[^.]+$/, ''));
+  form.append('filename',   clip.filename);
+  form.append('duration',   String(clip.duration || ''));
+  form.append('size_bytes', String(clip.size_bytes || ''));
+  if (clip.thumbnail) form.append('thumbnail', fs.createReadStream(clip.thumbnail));
+
+  const res = await axios.post(`${platformUrl.replace(/\/$/, '')}/api/clips/upload`, form, {
+    headers: { ...form.getHeaders(), Authorization: `Bearer ${token}` },
+    onUploadProgress: ({ loaded, total }) => {
+      if (total) mainWindow?.webContents.send('platform-upload-progress', { percent: Math.round(loaded / total * 100) });
+    },
+    maxContentLength: Infinity,
+    maxBodyLength:    Infinity,
+  });
+
+  const clipUrl = `${platformUrl.replace(/\/$/, '')}/clip/${res.data.id}`;
+  setConfig(`platform_clip_${clipId}`, clipUrl);
+  return clipUrl;
+});
+
+ipcMain.handle('get-platform-clip-url', (_, { clipId }) => getConfig(`platform_clip_${clipId}`) || null);
+
+ipcMain.handle('set-platform-auto-upload', (_, { enabled }) => {
+  setConfig('platform_auto_upload', enabled ? '1' : '0');
+});
+ipcMain.handle('get-platform-auto-upload', () => getConfig('platform_auto_upload') === '1');
+
+// ─── OBS WebSocket / hotkey ────────────────────────────────────────────────────
+
+ipcMain.handle('set-obs-config', (_, { host, port, password, hotkeyKey }) => {
+  setConfig('obs_host',     host     || 'localhost');
+  setConfig('obs_port',     String(port || 4455));
+  setConfig('obs_password', password || '');
+  setConfig('obs_hotkey',   hotkeyKey || 'F9');
+  registerClipHotkey();
+});
+
+ipcMain.handle('get-obs-config', () => ({
+  host:      getConfig('obs_host')     || 'localhost',
+  port:      getConfig('obs_port')     || '4455',
+  password:  getConfig('obs_password') || '',
+  hotkeyKey: getConfig('obs_hotkey')   || 'F9',
+}));
+
+ipcMain.handle('obs-trigger-replay', triggerObsReplay);
+
+async function triggerObsReplay() {
+  const host     = getConfig('obs_host')     || 'localhost';
+  const port     = getConfig('obs_port')     || '4455';
+  const password = getConfig('obs_password') || '';
+  try {
+    const { default: OBSWebSocket } = require('obs-websocket-js');
+    if (!obsWs) { obsWs = new OBSWebSocket(); }
+    try { await obsWs.connect(`ws://${host}:${port}`, password || undefined); } catch {}
+    await obsWs.call('SaveReplayBuffer');
+    mainWindow?.webContents.send('obs-replay-saved');
+    new Notification({ title: 'FlareTube', body: 'Replay saved! 🎬' }).show();
+  } catch (e) {
+    mainWindow?.webContents.send('obs-replay-error', { message: e.message });
+    new Notification({ title: 'FlareTube', body: 'Could not save replay: ' + e.message }).show();
+  }
+}
+
+function registerClipHotkey() {
+  globalShortcut.unregisterAll();
+  const key = getConfig('obs_hotkey') || 'F9';
+  try {
+    globalShortcut.register(key, () => triggerObsReplay());
+  } catch (e) {
+    console.error('Failed to register hotkey:', e);
+  }
+}
+
 ipcMain.handle('check-for-update', async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
@@ -346,6 +480,18 @@ app.whenReady().then(() => {
   const watchFolder = getConfig('watch_folder');
   if (watchFolder) startWatcher(watchFolder);
 
+  // Auto-upload internal event (not exposed via ipc)
+  ipcMain.on('_auto-upload', async (_, { clipId }) => {
+    try {
+      const url = await ipcMain.emit('platform-upload-clip', null, { clipId });
+      mainWindow?.webContents.send('platform-auto-uploaded', { clipId, url });
+    } catch (e) {
+      console.error('Auto-upload failed:', e.message);
+    }
+  });
+
+  registerClipHotkey();
+
   autoUpdater.autoDownload = false;
   autoUpdater.on('update-available', info => {
     mainWindow?.webContents.send('update-available', {
@@ -358,5 +504,6 @@ app.whenReady().then(() => {
   setTimeout(() => { try { autoUpdater.checkForUpdates(); } catch (_) {} }, 5000);
 });
 
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

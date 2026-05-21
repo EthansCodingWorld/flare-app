@@ -30,7 +30,9 @@
 
     <div class="header-right">
       <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Refresh">↻ Refresh</button>
-      <button class="btn btn-secondary btn-sm" id="cloudBtn">☁ Cloud</button>
+      <button class="btn btn-secondary btn-sm" id="platformBtn">🌐 Platform</button>
+      <button class="btn btn-secondary btn-sm" id="obsBtn">🎮 OBS</button>
+      <button class="btn btn-secondary btn-sm" id="cloudBtn">☁ R2</button>
       <button class="btn btn-secondary btn-sm" id="discordBtn">⚡ Discord</button>
       <button class="btn btn-primary btn-sm" id="setupFolderBtn">+ Watch Folder</button>
     </div>
@@ -98,7 +100,20 @@
         <div class="info-block">
           <div class="section-title">Share</div>
 
-          <!-- Cloud upload -->
+          <!-- Platform upload -->
+          <div id="platformShareArea" style="margin-bottom:0.5rem">
+            <div class="link-row" id="platformLinkRow" style="display:none">
+              <div class="link-display" id="platformLink"></div>
+              <button class="btn btn-xs btn-secondary" id="copyPlatformBtn">Copy</button>
+            </div>
+            <div class="upload-prog" id="platformUploadProg" style="display:none">
+              <div class="progress-track"><div class="progress-fill" id="platformUploadFill"></div></div>
+              <span class="progress-label" id="platformUploadLabel">Uploading…</span>
+            </div>
+            <button class="btn btn-primary btn-sm" id="uploadPlatformBtn">🌐 Post to Platform</button>
+          </div>
+
+          <!-- R2 cloud upload -->
           <div id="cloudShareArea">
             <div class="link-row" id="cloudLinkRow" style="display:none">
               <div class="link-display" id="cloudLink"></div>
@@ -108,7 +123,7 @@
               <div class="progress-track"><div class="progress-fill" id="uploadFill"></div></div>
               <span class="progress-label" id="uploadLabel">Uploading…</span>
             </div>
-            <button class="btn btn-secondary btn-sm" id="uploadR2Btn">☁ Upload &amp; Get Link</button>
+            <button class="btn btn-secondary btn-sm" id="uploadR2Btn">☁ R2 Link</button>
           </div>
 
           <!-- Discord -->
@@ -120,6 +135,76 @@
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ── Platform settings modal ───────────────────────────────────────── -->
+<div class="modal" id="platformModal">
+  <div class="modal-box modal-sm">
+    <button class="modal-close" id="platformClose">×</button>
+    <div class="modal-body">
+      <h2>Platform Account</h2>
+      <p class="modal-desc">Connect to your FlareTube platform so clips sync automatically.</p>
+
+      <div class="form-row">
+        <label class="form-label">Platform URL</label>
+        <input type="text" id="platformUrl" placeholder="https://flaremaxxing.com" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Username</label>
+        <input type="text" id="platformUsername" placeholder="your_username" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Password</label>
+        <input type="password" id="platformPassword" placeholder="••••••••" class="input">
+      </div>
+
+      <div id="platformStatus" style="font-size:0.8rem;margin-bottom:0.75rem;display:none"></div>
+
+      <div class="form-row" style="flex-direction:row;align-items:center;gap:0.5rem">
+        <input type="checkbox" id="platformAutoUpload" style="width:auto">
+        <label class="form-label" style="margin:0;text-transform:none;font-size:0.875rem">Auto-upload new clips to platform</label>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" id="platformLoginBtn" style="flex:1">Sign in &amp; Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── OBS / Hotkey modal ─────────────────────────────────────────────── -->
+<div class="modal" id="obsModal">
+  <div class="modal-box modal-sm">
+    <button class="modal-close" id="obsClose">×</button>
+    <div class="modal-body">
+      <h2>OBS &amp; Instant Clip</h2>
+      <p class="modal-desc">Connect to OBS WebSocket so you can save a replay with a hotkey — no upload required.</p>
+
+      <div class="form-row">
+        <label class="form-label">OBS Host</label>
+        <input type="text" id="obsHost" placeholder="localhost" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">OBS Port</label>
+        <input type="text" id="obsPort" placeholder="4455" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">OBS Password <span style="opacity:0.5">(optional)</span></label>
+        <input type="password" id="obsPassword" placeholder="Set in OBS → Tools → WebSocket Settings" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Clip Hotkey</label>
+        <input type="text" id="obsHotkeyKey" placeholder="F9" class="input" style="max-width:120px">
+      </div>
+
+      <p class="modal-desc" style="margin-top:0.25rem">Requires OBS Replay Buffer to be enabled and running. Press the hotkey in-game to save the last N seconds instantly.</p>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" id="saveObsBtn" style="flex:1">Save</button>
+        <button class="btn btn-secondary" id="testObsBtn">Test</button>
+      </div>
     </div>
   </div>
 </div>

@@ -10,7 +10,7 @@ const state = {
 
 async function init() {
   setupListeners();
-  await Promise.all([loadClips(), loadWatchFolder(), loadAppVersion(), loadDiscordConfig(), loadR2Config()]);
+  await Promise.all([loadClips(), loadWatchFolder(), loadAppVersion(), loadDiscordConfig(), loadR2Config(), loadPlatformConfig(), loadObsConfig()]);
   setupRealtime();
 }
 
@@ -63,6 +63,23 @@ function setupListeners() {
     loadClips();
   });
 
+  $('platformBtn').addEventListener('click', () => $('platformModal').classList.add('active'));
+  $('platformClose').addEventListener('click', () => $('platformModal').classList.remove('active'));
+  $('platformLoginBtn').addEventListener('click', doPlatformLogin);
+
+  $('obsBtn').addEventListener('click', () => $('obsModal').classList.add('active'));
+  $('obsClose').addEventListener('click', () => $('obsModal').classList.remove('active'));
+  $('saveObsBtn').addEventListener('click', saveObsConfig);
+  $('testObsBtn').addEventListener('click', async () => {
+    $('testObsBtn').disabled = true;
+    $('testObsBtn').textContent = 'Testing…';
+    try {
+      await invoke('obs-trigger-replay');
+      showToast('OBS replay triggered!', 'success');
+    } catch (e) { showToast('OBS error: ' + e, 'error'); }
+    finally { $('testObsBtn').disabled = false; $('testObsBtn').textContent = 'Test'; }
+  });
+
   $('cloudBtn').addEventListener('click', () => $('cloudModal').classList.add('active'));
   $('cloudClose').addEventListener('click', () => $('cloudModal').classList.remove('active'));
   $('saveCloudBtn').addEventListener('click', saveR2Config);
@@ -72,6 +89,8 @@ function setupListeners() {
   $('newTagInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTag(); });
   $('shareDiscordBtn').addEventListener('click', shareToDiscord);
   $('deleteClipBtn').addEventListener('click', deleteClip);
+  $('uploadPlatformBtn').addEventListener('click', uploadToPlatform);
+  $('copyPlatformBtn').addEventListener('click', copyPlatformLink);
   $('uploadR2Btn').addEventListener('click', uploadToR2);
   $('copyCloudBtn').addEventListener('click', copyCloudLink);
 
@@ -83,13 +102,13 @@ function setupListeners() {
   $('updateConfirmBtn').addEventListener('click', doInstallUpdate);
 
   // Close modals on backdrop click
-  ['clipModal', 'setupModal', 'discordModal', 'cloudModal', 'updateModal'].forEach(id => {
+  ['clipModal', 'setupModal', 'platformModal', 'obsModal', 'discordModal', 'cloudModal', 'updateModal'].forEach(id => {
     $(id).addEventListener('click', e => { if (e.target === $(id)) $(id).classList.remove('active'); });
   });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape')
-      ['clipModal','setupModal','discordModal','cloudModal','updateModal'].forEach(id => $(id).classList.remove('active'));
+      ['clipModal','setupModal','platformModal','obsModal','discordModal','cloudModal','updateModal'].forEach(id => $(id).classList.remove('active'));
   });
 }
 
@@ -159,6 +178,76 @@ async function saveR2Config() {
     await invoke('set-r2-config', { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain });
     $('cloudModal').classList.remove('active');
     showToast('Cloud settings saved!', 'success');
+  } catch (e) { showToast('Error: ' + e, 'error'); }
+}
+
+async function loadPlatformConfig() {
+  try {
+    const cfg = await invoke('get-platform-config');
+    if (cfg.platformUrl) $('platformUrl').value      = cfg.platformUrl;
+    if (cfg.username)    $('platformUsername').value = cfg.username;
+    if (cfg.token) {
+      const status = $('platformStatus');
+      status.style.display = '';
+      status.style.color   = '#4ade80';
+      status.textContent   = `✓ Signed in as ${cfg.username}`;
+    }
+    const autoUpload = await invoke('get-platform-auto-upload');
+    $('platformAutoUpload').checked = autoUpload;
+  } catch (_) {}
+}
+
+async function doPlatformLogin() {
+  const platformUrl = $('platformUrl').value.trim();
+  const username    = $('platformUsername').value.trim();
+  const password    = $('platformPassword').value;
+  const autoUpload  = $('platformAutoUpload').checked;
+  const status      = $('platformStatus');
+
+  if (!platformUrl || !username || !password) return showToast('Fill in all fields', 'error');
+
+  const btn = $('platformLoginBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  status.style.display = 'none';
+
+  try {
+    const { token } = await invoke('platform-login', { platformUrl, username, password });
+    await invoke('set-platform-config', { platformUrl, token, username });
+    await invoke('set-platform-auto-upload', { enabled: autoUpload });
+    status.style.display = '';
+    status.style.color   = '#4ade80';
+    status.textContent   = `✓ Signed in as ${username}`;
+    $('platformPassword').value = '';
+    showToast('Connected to platform!', 'success');
+    $('platformModal').classList.remove('active');
+  } catch (e) {
+    status.style.display = '';
+    status.style.color   = '#f87171';
+    status.textContent   = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in & Save';
+  }
+}
+
+async function loadObsConfig() {
+  try {
+    const cfg = await invoke('get-obs-config');
+    $('obsHost').value       = cfg.host     || 'localhost';
+    $('obsPort').value       = cfg.port     || '4455';
+    $('obsPassword').value   = cfg.password || '';
+    $('obsHotkeyKey').value  = cfg.hotkeyKey || 'F9';
+  } catch (_) {}
+}
+
+async function saveObsConfig() {
+  const host       = $('obsHost').value.trim()      || 'localhost';
+  const port       = parseInt($('obsPort').value)   || 4455;
+  const password   = $('obsPassword').value.trim();
+  const hotkeyKey  = $('obsHotkeyKey').value.trim() || 'F9';
+  try {
+    await invoke('set-obs-config', { host, port, password, hotkeyKey });
+    $('obsModal').classList.remove('active');
+    showToast(`OBS saved — hotkey is ${hotkeyKey}`, 'success');
   } catch (e) { showToast('Error: ' + e, 'error'); }
 }
 
@@ -248,6 +337,21 @@ async function openClip(id) {
 
     renderClipTags(clip.tags);
 
+    // Reset platform share UI
+    $('platformLinkRow').style.display = 'none';
+    $('platformLink').textContent = '';
+    $('platformUploadProg').style.display = 'none';
+    $('platformUploadFill').style.width = '0%';
+    $('uploadPlatformBtn').style.display = '';
+    // Check if already uploaded to platform
+    invoke('get-platform-clip-url', { clipId: clip.id }).then(url => {
+      if (url) {
+        $('platformLink').textContent = url;
+        $('platformLinkRow').style.display = '';
+        $('uploadPlatformBtn').style.display = 'none';
+      }
+    }).catch(() => {});
+
     // Reset cloud share UI
     $('cloudLinkRow').style.display = 'none';
     $('cloudLink').textContent = '';
@@ -331,6 +435,40 @@ async function copyCloudLink() {
   } catch (_) { showToast('Copy failed', 'error'); }
 }
 
+// ─── Platform upload ──────────────────────────────────────────────────────────
+
+async function uploadToPlatform() {
+  if (!state.currentClip) return;
+  const btn = $('uploadPlatformBtn');
+  try {
+    btn.disabled = true; btn.textContent = 'Posting…';
+    $('platformUploadProg').style.display = '';
+    $('platformUploadFill').style.width = '0%';
+    $('platformUploadLabel').textContent = 'Uploading…';
+
+    const url = await invoke('platform-upload-clip', { clipId: state.currentClip.id });
+
+    $('platformUploadProg').style.display = 'none';
+    $('platformLink').textContent = url;
+    $('platformLinkRow').style.display = '';
+    btn.style.display = 'none';
+    showToast('Posted to platform!', 'success');
+  } catch (e) {
+    $('platformUploadProg').style.display = 'none';
+    btn.disabled = false; btn.textContent = '🌐 Post to Platform';
+    showToast('Platform error: ' + e, 'error');
+  }
+}
+
+async function copyPlatformLink() {
+  const link = $('platformLink').textContent;
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    showToast('Link copied!', 'success');
+  } catch (_) { showToast('Copy failed', 'error'); }
+}
+
 // ─── Discord share ─────────────────────────────────────────────────────────────
 
 async function shareToDiscord() {
@@ -372,6 +510,15 @@ function setupRealtime() {
     $('uploadFill').style.width = `${data.percent}%`;
     $('uploadLabel').textContent = data.percent < 100 ? `Uploading… ${data.percent}%` : 'Finishing…';
   });
+  listen('platform-upload-progress', data => {
+    $('platformUploadFill').style.width = `${data.percent}%`;
+    $('platformUploadLabel').textContent = data.percent < 100 ? `Uploading… ${data.percent}%` : 'Finishing…';
+  });
+  listen('platform-auto-uploaded', data => {
+    showToast('Auto-uploaded to platform!', 'success');
+  });
+  listen('obs-replay-saved', () => showToast('Replay saved by OBS!', 'success'));
+  listen('obs-replay-error', data => showToast('OBS error: ' + data.message, 'error'));
 }
 
 // ─── Updates ──────────────────────────────────────────────────────────────────
