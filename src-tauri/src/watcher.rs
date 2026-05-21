@@ -115,13 +115,14 @@ async fn process_clip(
     let id = Uuid::new_v4().to_string();
     let path_str = path.to_string_lossy().to_string();
 
-    sqlx::query!(
+    sqlx::query(
         "INSERT OR IGNORE INTO clips (id, filename, path, created_at, added_at, duration, size_bytes, thumbnail)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        id, filename, path_str, created_at, now, duration, size_bytes, thumbnail
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .execute(pool)
-    .await?;
+    .bind(&id).bind(&filename).bind(&path_str)
+    .bind(&created_at).bind(&now).bind(duration)
+    .bind(size_bytes).bind(&thumbnail)
+    .execute(pool).await?;
 
     let _ = app.emit("clip-detected", serde_json::json!({
         "id": id,

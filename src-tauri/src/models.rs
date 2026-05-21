@@ -13,7 +13,7 @@ pub struct Clip {
     pub tags: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, sqlx::FromRow)]
 pub struct ClipRow {
     pub id: String,
     pub filename: String,
