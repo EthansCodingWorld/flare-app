@@ -1,7 +1,7 @@
 {
   "name": "flare-app",
-  "version": "0.4.0",
-  "description": "OBS clip manager with Discord integration",
+  "version": "0.4.1",
+  "description": "FlareTube desktop app — capture, clip, and share your best plays",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -26,8 +26,8 @@
     "electron-builder": "^24.13.0"
   },
   "build": {
-    "appId": "com.flare.app",
-    "productName": "Flare",
+    "appId": "com.flaretube.app",
+    "productName": "FlareTube",
     "files": [
       "main.js",
       "preload.js",
