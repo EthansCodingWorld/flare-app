@@ -30,6 +30,7 @@
 
     <div class="header-right">
       <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Refresh">↻ Refresh</button>
+      <button class="btn btn-secondary btn-sm" id="cloudBtn">☁ Cloud</button>
       <button class="btn btn-secondary btn-sm" id="discordBtn">⚡ Discord</button>
       <button class="btn btn-primary btn-sm" id="setupFolderBtn">+ Watch Folder</button>
     </div>
@@ -97,10 +98,17 @@
         <div class="info-block">
           <div class="section-title">Share</div>
 
-          <!-- Local link -->
-          <div class="link-row">
-            <div class="link-display" id="localLink">Generating link…</div>
-            <button class="btn btn-sm btn-secondary" id="copyLinkBtn" title="Copy local network link">Copy</button>
+          <!-- Cloud upload -->
+          <div id="cloudShareArea">
+            <div class="link-row" id="cloudLinkRow" style="display:none">
+              <div class="link-display" id="cloudLink"></div>
+              <button class="btn btn-xs btn-secondary" id="copyCloudBtn">Copy</button>
+            </div>
+            <div class="upload-prog" id="uploadProg" style="display:none">
+              <div class="progress-track"><div class="progress-fill" id="uploadFill"></div></div>
+              <span class="progress-label" id="uploadLabel">Uploading…</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="uploadR2Btn">☁ Upload &amp; Get Link</button>
           </div>
 
           <!-- Discord -->
@@ -134,6 +142,42 @@
 
       <div class="form-actions">
         <button class="btn btn-primary" id="confirmFolderBtn" style="flex:1">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Cloud (R2) settings modal ──────────────────────────────────────── -->
+<div class="modal" id="cloudModal">
+  <div class="modal-box modal-sm">
+    <button class="modal-close" id="cloudClose">×</button>
+    <div class="modal-body">
+      <h2>Cloud Settings</h2>
+      <p class="modal-desc">Connect to Cloudflare R2 to share clips via <strong>clips.flaremaxxing.com</strong>.</p>
+
+      <div class="form-row">
+        <label class="form-label">Account ID</label>
+        <input type="text" id="r2AccountId" placeholder="Cloudflare Account ID" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Access Key ID</label>
+        <input type="text" id="r2AccessKeyId" placeholder="R2 Access Key ID" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Secret Access Key</label>
+        <input type="password" id="r2SecretAccessKey" placeholder="R2 Secret Access Key" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Bucket Name</label>
+        <input type="text" id="r2BucketName" placeholder="my-clips-bucket" class="input">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Public Domain</label>
+        <input type="text" id="r2PublicDomain" placeholder="clips.flaremaxxing.com" class="input">
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" id="saveCloudBtn" style="flex:1">Save</button>
       </div>
     </div>
   </div>

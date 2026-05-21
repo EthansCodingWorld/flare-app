@@ -192,6 +192,62 @@ ipcMain.handle('open-folder-dialog', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('set-r2-config', (_, { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain }) => {
+  setConfig('r2_account_id',        accountId);
+  setConfig('r2_access_key_id',     accessKeyId);
+  setConfig('r2_secret_access_key', secretAccessKey);
+  setConfig('r2_bucket_name',       bucketName);
+  setConfig('r2_public_domain',     publicDomain.replace(/^https?:\/\//, ''));
+});
+
+ipcMain.handle('get-r2-config', () => ({
+  accountId:       getConfig('r2_account_id')        || '',
+  accessKeyId:     getConfig('r2_access_key_id')     || '',
+  secretAccessKey: getConfig('r2_secret_access_key') || '',
+  bucketName:      getConfig('r2_bucket_name')       || '',
+  publicDomain:    getConfig('r2_public_domain')     || '',
+}));
+
+ipcMain.handle('upload-to-r2', async (_, { clipId }) => {
+  const clip = db.prepare('SELECT * FROM clips WHERE id = ?').get(clipId);
+  if (!clip) throw new Error('Clip not found');
+
+  const accountId       = getConfig('r2_account_id');
+  const accessKeyId     = getConfig('r2_access_key_id');
+  const secretAccessKey = getConfig('r2_secret_access_key');
+  const bucketName      = getConfig('r2_bucket_name');
+  const publicDomain    = getConfig('r2_public_domain');
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !publicDomain) {
+    throw new Error('R2 not configured — open Cloud settings first.');
+  }
+
+  const { S3Client }  = require('@aws-sdk/client-s3');
+  const { Upload }    = require('@aws-sdk/lib-storage');
+
+  const s3  = new S3Client({
+    region:      'auto',
+    endpoint:    `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  const ext  = path.extname(clip.path).toLowerCase();
+  const mime = VIDEO_MIME[ext] || 'video/mp4';
+  const key  = `${clipId}${ext}`;
+
+  const upload = new Upload({
+    client: s3,
+    params: { Bucket: bucketName, Key: key, Body: fs.createReadStream(clip.path), ContentType: mime },
+  });
+
+  upload.on('httpUploadProgress', ({ loaded, total }) => {
+    if (total) mainWindow?.webContents.send('r2-upload-progress', { percent: Math.round(loaded / total * 100) });
+  });
+
+  await upload.done();
+  return `https://${publicDomain}/${key}`;
+});
+
 ipcMain.handle('get-discord-config', () => ({
   botUrl:    getConfig('discord_bot_url')    || '',
   channelId: getConfig('discord_channel_id') || '',

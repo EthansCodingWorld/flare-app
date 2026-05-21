@@ -10,7 +10,7 @@ const state = {
 
 async function init() {
   setupListeners();
-  await Promise.all([loadClips(), loadWatchFolder(), loadAppVersion(), loadDiscordConfig()]);
+  await Promise.all([loadClips(), loadWatchFolder(), loadAppVersion(), loadDiscordConfig(), loadR2Config()]);
   setupRealtime();
 }
 
@@ -63,12 +63,17 @@ function setupListeners() {
     loadClips();
   });
 
+  $('cloudBtn').addEventListener('click', () => $('cloudModal').classList.add('active'));
+  $('cloudClose').addEventListener('click', () => $('cloudModal').classList.remove('active'));
+  $('saveCloudBtn').addEventListener('click', saveR2Config);
+
   $('refreshBtn').addEventListener('click', loadClips);
   $('addTagBtn').addEventListener('click', addTag);
   $('newTagInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTag(); });
   $('shareDiscordBtn').addEventListener('click', shareToDiscord);
   $('deleteClipBtn').addEventListener('click', deleteClip);
-  $('copyLinkBtn').addEventListener('click', copyLocalLink);
+  $('uploadR2Btn').addEventListener('click', uploadToR2);
+  $('copyCloudBtn').addEventListener('click', copyCloudLink);
 
   $('updateInstallBtn').addEventListener('click', doInstallUpdate);
   $('updateDetailsBtn').addEventListener('click', openUpdateModal);
@@ -78,13 +83,13 @@ function setupListeners() {
   $('updateConfirmBtn').addEventListener('click', doInstallUpdate);
 
   // Close modals on backdrop click
-  ['clipModal', 'setupModal', 'discordModal', 'updateModal'].forEach(id => {
+  ['clipModal', 'setupModal', 'discordModal', 'cloudModal', 'updateModal'].forEach(id => {
     $(id).addEventListener('click', e => { if (e.target === $(id)) $(id).classList.remove('active'); });
   });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape')
-      ['clipModal','setupModal','discordModal','updateModal'].forEach(id => $(id).classList.remove('active'));
+      ['clipModal','setupModal','discordModal','cloudModal','updateModal'].forEach(id => $(id).classList.remove('active'));
   });
 }
 
@@ -126,6 +131,35 @@ async function loadDiscordConfig() {
       if (cfg.channelId) $('discordChannelId').value = cfg.channelId;
     }
   } catch (_) {}
+}
+
+async function loadR2Config() {
+  try {
+    const cfg = await invoke('get-r2-config');
+    if (cfg) {
+      if (cfg.accountId)       $('r2AccountId').value       = cfg.accountId;
+      if (cfg.accessKeyId)     $('r2AccessKeyId').value     = cfg.accessKeyId;
+      if (cfg.secretAccessKey) $('r2SecretAccessKey').value = cfg.secretAccessKey;
+      if (cfg.bucketName)      $('r2BucketName').value      = cfg.bucketName;
+      $('r2PublicDomain').value = cfg.publicDomain || 'clips.flaremaxxing.com';
+    }
+  } catch (_) {}
+}
+
+async function saveR2Config() {
+  const accountId       = $('r2AccountId').value.trim();
+  const accessKeyId     = $('r2AccessKeyId').value.trim();
+  const secretAccessKey = $('r2SecretAccessKey').value.trim();
+  const bucketName      = $('r2BucketName').value.trim();
+  const publicDomain    = $('r2PublicDomain').value.trim() || 'clips.flaremaxxing.com';
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    return showToast('Fill in all R2 fields', 'error');
+  }
+  try {
+    await invoke('set-r2-config', { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain });
+    $('cloudModal').classList.remove('active');
+    showToast('Cloud settings saved!', 'success');
+  } catch (e) { showToast('Error: ' + e, 'error'); }
 }
 
 // ─── Render ────────────────────────────────────────────────────────────────────
@@ -213,13 +247,15 @@ async function openClip(id) {
     $('clipVideo').src = window.electronAPI.mediaUrl(clip.path);
 
     renderClipTags(clip.tags);
-    $('clipModal').classList.add('active');
 
-    // Generate local link
-    $('localLink').textContent = 'Generating…';
-    invoke('get-clip-link', { clipId: clip.id })
-      .then(link => { $('localLink').textContent = link; })
-      .catch(() => { $('localLink').textContent = 'Unavailable'; });
+    // Reset cloud share UI
+    $('cloudLinkRow').style.display = 'none';
+    $('cloudLink').textContent = '';
+    $('uploadProg').style.display = 'none';
+    $('uploadFill').style.width = '0%';
+    $('uploadR2Btn').style.display = '';
+
+    $('clipModal').classList.add('active');
 
   } catch (e) { showToast('Error loading clip: ' + e, 'error'); }
 }
@@ -261,17 +297,38 @@ function closeClipModal() {
   state.currentClip = null;
 }
 
-// ─── Local link ────────────────────────────────────────────────────────────────
+// ─── R2 cloud upload ───────────────────────────────────────────────────────────
 
-async function copyLocalLink() {
-  const link = $('localLink').textContent;
-  if (!link || link === 'Generating…' || link === 'Unavailable') return;
+async function uploadToR2() {
+  if (!state.currentClip) return;
+  const btn = $('uploadR2Btn');
+  try {
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    $('uploadProg').style.display = '';
+    $('uploadFill').style.width = '0%';
+    $('uploadLabel').textContent = 'Uploading…';
+
+    const url = await invoke('upload-to-r2', { clipId: state.currentClip.id });
+
+    $('uploadProg').style.display = 'none';
+    $('cloudLink').textContent = url;
+    $('cloudLinkRow').style.display = '';
+    btn.style.display = 'none';
+    showToast('Uploaded! Link ready.', 'success');
+  } catch (e) {
+    $('uploadProg').style.display = 'none';
+    btn.disabled = false; btn.textContent = '☁ Upload & Get Link';
+    showToast('Upload failed: ' + e, 'error');
+  }
+}
+
+async function copyCloudLink() {
+  const link = $('cloudLink').textContent;
+  if (!link) return;
   try {
     await navigator.clipboard.writeText(link);
-    showToast('Link copied! Works on your local network.', 'blue');
-  } catch (_) {
-    showToast('Copy failed', 'error');
-  }
+    showToast('Link copied!', 'success');
+  } catch (_) { showToast('Copy failed', 'error'); }
 }
 
 // ─── Discord share ─────────────────────────────────────────────────────────────
@@ -311,6 +368,10 @@ function setupRealtime() {
   listen('clip-detected', () => loadClips());
   listen('update-available', data => showUpdateBanner(data));
   listen('update-progress', data => setProgress(data.percent));
+  listen('r2-upload-progress', data => {
+    $('uploadFill').style.width = `${data.percent}%`;
+    $('uploadLabel').textContent = data.percent < 100 ? `Uploading… ${data.percent}%` : 'Finishing…';
+  });
 }
 
 // ─── Updates ──────────────────────────────────────────────────────────────────
