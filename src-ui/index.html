@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flare</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Update banner (hidden until update is available) -->
+    <div class="update-banner" id="updateBanner">
+        <span id="updateBannerText">✨ Update available</span>
+        <div class="update-banner-actions">
+            <button class="btn btn-sm btn-primary" id="updateInstallBtn">Install & Restart</button>
+            <button class="btn btn-sm btn-secondary" id="updateDetailsBtn">Details</button>
+            <button class="update-banner-dismiss" id="updateDismiss">×</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>🔥 Flare</h1>
+                <span class="clip-count" id="clipCount">0 clips</span>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
+                <button class="btn btn-secondary" id="discordBtn">Discord</button>
+                <button class="btn btn-primary" id="setupFolderBtn">Setup Folder</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar">
+                <div class="filter-section">
+                    <h3>Search</h3>
+                    <input type="text" id="searchInput" placeholder="Search clips…" class="input">
+                </div>
+                <div class="filter-section">
+                    <h3>Sort</h3>
+                    <select id="sortSelect" class="input">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="duration">Longest First</option>
+                    </select>
+                </div>
+            </aside>
+
+            <main class="feed">
+                <div class="clips-grid" id="clipsGrid">
+                    <div class="loading">Loading clips…</div>
+                </div>
+                <div class="pagination" id="pagination"></div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Clip detail modal -->
+    <div class="modal" id="clipModal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" id="modalClose">×</button>
+            <div class="modal-body">
+                <video id="clipVideo" controls preload="metadata"></video>
+                <div class="clip-info">
+                    <h2 id="clipTitle"></h2>
+                    <div class="clip-meta">
+                        <span id="clipDate"></span>
+                        <span id="clipDuration"></span>
+                        <span id="clipSize"></span>
+                    </div>
+                    <div class="clip-tags" id="clipTags"></div>
+                    <div class="tag-add-row">
+                        <input type="text" id="newTagInput" placeholder="Add tag…" class="input input-sm">
+                        <button class="btn btn-sm btn-secondary" id="addTagBtn">Add</button>
+                    </div>
+                    <div class="share-section">
+                        <textarea id="discordMessage" placeholder="Optional message for Discord…" class="input" rows="2"></textarea>
+                        <div class="share-actions">
+                            <button class="btn btn-primary" id="shareDiscordBtn">Share to Discord</button>
+                            <button class="btn btn-danger" id="deleteClipBtn">Remove</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder setup modal -->
+    <div class="modal" id="setupModal">
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="setupClose">×</button>
+            <div class="modal-body">
+                <h2>OBS Output Folder</h2>
+                <p class="modal-desc">Point Flare at your OBS video output folder. New clips are auto-detected.</p>
+                <div class="setup-form">
+                    <div class="folder-row">
+                        <input type="text" id="folderPathInput" placeholder="/path/to/obs/clips" class="input">
+                        <button class="btn btn-secondary" id="browseFolderBtn">Browse</button>
+                    </div>
+                    <button class="btn btn-primary" id="confirmFolderBtn">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Discord settings modal -->
+    <div class="modal" id="discordModal">
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="discordClose">×</button>
+            <div class="modal-body">
+                <h2>Discord Settings</h2>
+                <p class="modal-desc">Connect to your Flare Discord bot to share clips.</p>
+                <div class="setup-form">
+                    <label class="form-label">Bot Bridge URL</label>
+                    <input type="text" id="discordBotUrl" placeholder="http://your-vps-ip:4001" class="input">
+                    <label class="form-label">Clips Channel ID</label>
+                    <input type="text" id="discordChannelId" placeholder="123456789012345678" class="input">
+                    <label class="form-label">Bridge Secret</label>
+                    <input type="password" id="discordSecret" placeholder="Set in BRIDGE_SECRET on your VPS" class="input">
+                    <button class="btn btn-primary" id="saveDiscordBtn">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update changelog modal -->
+    <div class="modal" id="updateModal">
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="updateModalClose">×</button>
+            <div class="modal-body">
+                <h2>🚀 Update Available</h2>
+                <p class="modal-desc">A new version of Flare is ready to install.</p>
+                <div class="update-version-row">
+                    <span class="version-pill current" id="currentVersionPill">v0.0.0</span>
+                    <span class="version-arrow">→</span>
+                    <span class="version-pill new" id="newVersionPill">v0.0.0</span>
+                </div>
+                <div class="changelog-box" id="changelogBox">Loading changelog…</div>
+                <div class="update-progress" id="updateProgress">
+                    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                    <span id="progressLabel">Downloading…</span>
+                </div>
+                <div class="setup-form" style="margin-top:1rem">
+                    <button class="btn btn-primary" id="updateConfirmBtn">Install & Restart</button>
+                    <button class="btn btn-secondary" id="updateLaterBtn">Later</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
