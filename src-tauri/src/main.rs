@@ -34,25 +34,23 @@ fn main() {
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
-            let rt = tokio::runtime::Runtime::new().unwrap();
 
-            rt.block_on(async {
+            // Use Tauri's async runtime — never create a new tokio::Runtime inside setup
+            tauri::async_runtime::block_on(async move {
                 if let Err(e) = initialize(&app_handle).await {
                     eprintln!("Init error: {}", e);
                 }
             });
 
-            // Listen for watch-folder-changed to restart watcher
+            // Restart watcher whenever the watch folder is changed from the UI
             let app_handle_2 = app.handle().clone();
             app.listen("watch-folder-changed", move |event| {
-                if let Some(path) = event.payload().strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-                    let path = path.to_string();
-                    let app_clone = app_handle_2.clone();
-                    tokio::spawn(async move {
-                        let pool = app_clone.state::<DbState>().0.clone();
-                        let _ = watcher::start_watcher(path, Arc::new(pool), app_clone).await;
-                    });
-                }
+                let raw = event.payload().trim_matches('"').to_string();
+                let app_clone = app_handle_2.clone();
+                tauri::async_runtime::spawn(async move {
+                    let pool = app_clone.state::<DbState>().0.clone();
+                    let _ = watcher::start_watcher(raw, Arc::new(pool), app_clone).await;
+                });
             });
 
             Ok(())
@@ -71,7 +69,6 @@ async fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     app.manage(DbState((*pool).clone()));
 
-    // Start watcher if a folder was previously saved
     let watch_folder = sqlx::query_scalar::<_, String>(
         "SELECT value FROM config WHERE key = 'watch_folder'"
     )
@@ -83,15 +80,14 @@ async fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(folder) = watch_folder {
         let pool_clone = pool.clone();
         let app_clone = app.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let _ = watcher::start_watcher(folder, pool_clone, app_clone).await;
         });
     }
 
-    // Silent background update check — emits "update-available" if found
+    // Background update check after window is ready
     let app_clone = app.clone();
-    tokio::spawn(async move {
-        // Delay so the window is ready to receive the event
+    tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         if let Ok(updater) = app_clone.updater() {
             if let Ok(Some(update)) = updater.check().await {
