@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Linux deps
         if: matrix.os == 'ubuntu-22.04'
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools python3 g++ make
 
       - name: Install dependencies
         run: npm install
