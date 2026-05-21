@@ -4,9 +4,6 @@
   "version": "0.1.0",
   "identifier": "com.flare.app",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
-    "devUrl": "../src-ui/index.html",
     "frontendDist": "../src-ui"
   },
   "app": {
