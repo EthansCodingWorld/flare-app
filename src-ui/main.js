@@ -1,6 +1,5 @@
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
-const { open } = window.__TAURI__.dialog;
+const invoke = (cmd, args) => window.electronAPI.invoke(cmd, args);
+const listen = (event, cb) => window.electronAPI.on(event, cb);
 
 const state = {
     clips: [],
@@ -29,7 +28,7 @@ function setupListeners() {
     $('modalClose').addEventListener('click', closeClipModal);
 
     $('browseFolderBtn').addEventListener('click', async () => {
-        const selected = await open({ directory: true, multiple: false });
+        const selected = await window.electronAPI.openFolderDialog();
         if (selected) $('folderPathInput').value = selected;
     });
 
@@ -37,7 +36,7 @@ function setupListeners() {
         const path = $('folderPathInput').value.trim();
         if (!path) return;
         try {
-            await invoke('set_watch_folder', { folderPath: path });
+            await invoke('set-watch-folder', { folderPath: path });
             $('setupModal').classList.remove('active');
             showToast('Watch folder saved!', 'success');
             await loadClips();
@@ -52,7 +51,7 @@ function setupListeners() {
         const secret = $('discordSecret').value.trim() || null;
         if (!botUrl || !channelId) return showToast('Fill in Bot URL and Channel ID', 'error');
         try {
-            await invoke('set_discord_config', { botUrl, channelId, secret });
+            await invoke('set-discord-config', { botUrl, channelId, secret });
             $('discordModal').classList.remove('active');
             showToast('Discord configured!', 'success');
         } catch (e) {
@@ -79,12 +78,10 @@ function setupListeners() {
     $('shareDiscordBtn').addEventListener('click', shareToDiscord);
     $('deleteClipBtn').addEventListener('click', deleteClip);
 
-    // Update banner
     $('updateInstallBtn').addEventListener('click', doInstallUpdate);
     $('updateDetailsBtn').addEventListener('click', openUpdateModal);
     $('updateDismiss').addEventListener('click', () => $('updateBanner').classList.remove('visible'));
 
-    // Update modal
     $('updateModalClose').addEventListener('click', () => $('updateModal').classList.remove('active'));
     $('updateLaterBtn').addEventListener('click', () => $('updateModal').classList.remove('active'));
     $('updateConfirmBtn').addEventListener('click', doInstallUpdate);
@@ -102,13 +99,13 @@ function setupListeners() {
 async function loadClips() {
     try {
         const [clips, count] = await Promise.all([
-            invoke('get_clips', {
+            invoke('get-clips', {
                 limit: state.pageSize,
                 offset: state.currentPage * state.pageSize,
                 search: state.filter.search || null,
                 sort: state.filter.sort,
             }),
-            invoke('get_clips_count'),
+            invoke('get-clips-count'),
         ]);
         state.clips = clips;
         state.totalCount = count;
@@ -122,7 +119,7 @@ async function loadClips() {
 
 async function loadWatchFolder() {
     try {
-        const folder = await invoke('get_watch_folder');
+        const folder = await invoke('get-watch-folder');
         if (folder) $('folderPathInput').value = folder;
     } catch (_) {}
 }
@@ -143,7 +140,7 @@ function renderClips() {
     $('clipsGrid').innerHTML = state.clips.map(clip => `
         <div class="clip-card" data-id="${clip.id}">
             ${clip.thumbnail
-                ? `<img src="asset://localhost/${clip.thumbnail.replace(/\\/g, '/')}" class="clip-thumbnail" alt="" loading="lazy">`
+                ? `<img src="${window.electronAPI.mediaUrl(clip.thumbnail)}" class="clip-thumbnail" alt="" loading="lazy">`
                 : `<div class="clip-thumbnail clip-thumb-placeholder"><span>🎬</span></div>`}
             <div class="clip-card-info">
                 <div class="clip-card-title" title="${escHtml(clip.filename)}">${escHtml(clip.filename)}</div>
@@ -194,14 +191,14 @@ function renderPagination() {
 
 async function openClip(id) {
     try {
-        const clip = await invoke('get_clip', { id });
+        const clip = await invoke('get-clip', { id });
         state.currentClip = clip;
 
         $('clipTitle').textContent = clip.filename;
         $('clipDate').textContent = fmtDateFull(clip.created_at);
         $('clipDuration').textContent = clip.duration ? fmtDuration(clip.duration) : '';
         $('clipSize').textContent = clip.size_bytes ? fmtSize(clip.size_bytes) : '';
-        $('clipVideo').src = `asset://localhost/${clip.path.replace(/\\/g, '/')}`;
+        $('clipVideo').src = window.electronAPI.mediaUrl(clip.path);
 
         renderClipTags(clip.tags);
         $('clipModal').classList.add('active');
@@ -221,7 +218,7 @@ function renderClipTags(tags) {
     $('clipTags').querySelectorAll('.tag-remove').forEach(btn => {
         btn.addEventListener('click', async () => {
             try {
-                await invoke('remove_tag', { clipId: state.currentClip.id, tag: btn.dataset.tag });
+                await invoke('remove-tag', { clipId: state.currentClip.id, tag: btn.dataset.tag });
                 state.currentClip.tags = state.currentClip.tags.filter(t => t !== btn.dataset.tag);
                 renderClipTags(state.currentClip.tags);
             } catch (e) { showToast('Error: ' + e, 'error'); }
@@ -234,7 +231,7 @@ async function addTag() {
     const tag = input.value.trim();
     if (!tag || !state.currentClip) return;
     try {
-        await invoke('add_tags', { clipId: state.currentClip.id, tags: [tag] });
+        await invoke('add-tags', { clipId: state.currentClip.id, tags: [tag] });
         state.currentClip.tags.push(tag);
         renderClipTags(state.currentClip.tags);
         input.value = '';
@@ -247,7 +244,7 @@ async function shareToDiscord() {
     try {
         $('shareDiscordBtn').disabled = true;
         $('shareDiscordBtn').textContent = 'Sharing…';
-        await invoke('share_clip_to_discord', { clipId: state.currentClip.id, message: msg });
+        await invoke('share-clip-to-discord', { clipId: state.currentClip.id, message: msg });
         showToast('Shared to Discord!', 'success');
         $('discordMessage').value = '';
     } catch (e) {
@@ -262,7 +259,7 @@ async function deleteClip() {
     if (!state.currentClip) return;
     if (!confirm(`Delete "${state.currentClip.filename}" from Flare? (File stays on disk)`)) return;
     try {
-        await invoke('delete_clip', { clipId: state.currentClip.id });
+        await invoke('delete-clip', { clipId: state.currentClip.id });
         closeClipModal();
         await loadClips();
         showToast('Clip removed', 'success');
@@ -277,25 +274,17 @@ function closeClipModal() {
 
 function setupRealtime() {
     listen('clip-detected', () => loadClips());
-
-    // Background update check result
-    listen('update-available', ({ payload }) => {
-        showUpdateBanner(payload);
-    });
-
-    // Download progress from install_update command
-    listen('update-progress', ({ payload }) => {
-        setUpdateProgress(payload.percent);
-    });
+    listen('update-available', data => showUpdateBanner(data));
+    listen('update-progress', data => setUpdateProgress(data.percent));
 }
 
-// ─── Versioning / Updates ────────────────────────────────────────────────────
+// ─── Versioning / Updates ─────────────────────────────────────────────────────
 
 let _pendingUpdate = null;
 
 async function loadAppVersion() {
     try {
-        const ver = await invoke('get_app_version');
+        const ver = await invoke('get-app-version');
         $('currentVersionPill').textContent = `v${ver}`;
     } catch (_) {}
 }
@@ -328,8 +317,7 @@ async function doInstallUpdate() {
     $('updateConfirmBtn').textContent = 'Downloading…';
     $('updateProgress').classList.add('visible');
     try {
-        await invoke('install_update');
-        // App will restart automatically after install
+        await invoke('install-update');
     } catch (e) {
         $('updateConfirmBtn').disabled = false;
         $('updateConfirmBtn').textContent = 'Install & Restart';
@@ -337,7 +325,7 @@ async function doInstallUpdate() {
     }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDuration(secs) {
     const m = Math.floor(secs / 60), s = Math.floor(secs % 60);

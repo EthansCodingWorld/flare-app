@@ -1,20 +1,53 @@
 {
   "name": "flare-app",
-  "version": "0.1.0",
-  "description": "Optimized OBS clip manager with Discord integration",
-  "main": "index.js",
+  "version": "0.2.0",
+  "description": "OBS clip manager with Discord integration",
+  "main": "main.js",
   "scripts": {
-    "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "preview": "tauri build && open src-tauri/target/release/flare.app"
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "type": "module",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "better-sqlite3": "^9.6.0",
+    "chokidar": "^3.6.0",
+    "electron-updater": "^6.3.0",
+    "uuid": "^9.0.0"
+  },
   "devDependencies": {
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/cli": "^2.11.2"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.flare.app",
+    "productName": "Flare",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src-ui/**/*"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "src-tauri/icons/icon.ico"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "icon": "src-tauri/icons/icon.icns"
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "icon": "src-tauri/icons/512x512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "EthansCodingWorld",
+      "repo": "flare-app"
+    }
   }
 }
