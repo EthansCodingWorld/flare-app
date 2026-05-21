@@ -3,6 +3,8 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const os = require('os');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const chokidar = require('chokidar');
@@ -12,6 +14,8 @@ const Database = require('better-sqlite3');
 
 const execFileAsync = promisify(execFile);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.mkv', '.flv', '.avi', '.webm']);
+const VIDEO_MIME = { '.mp4':'video/mp4', '.mov':'video/quicktime', '.mkv':'video/x-matroska', '.webm':'video/webm', '.avi':'video/x-msvideo', '.flv':'video/x-flv' };
+const LINK_PORT  = 7842;
 
 // Must be called before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -21,6 +25,7 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow;
 let db;
 let watcher;
+let linkServer;
 
 // ─── Database ────────────────────────────────────────────────────────────────
 
@@ -187,6 +192,16 @@ ipcMain.handle('open-folder-dialog', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('get-discord-config', () => ({
+  botUrl:    getConfig('discord_bot_url')    || '',
+  channelId: getConfig('discord_channel_id') || '',
+}));
+
+ipcMain.handle('get-clip-link', (_, { clipId }) => {
+  const ip = getLocalIP();
+  return `http://${ip}:${LINK_PORT}/v/${clipId}`;
+});
+
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 ipcMain.handle('check-for-update', async () => {
@@ -203,6 +218,47 @@ ipcMain.handle('install-update', async () => {
   await autoUpdater.downloadUpdate();
   autoUpdater.quitAndInstall();
 });
+
+// ─── Local video link server ──────────────────────────────────────────────────
+
+function getLocalIP() {
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+function startLinkServer() {
+  linkServer = http.createServer((req, res) => {
+    const match = req.url.match(/^\/v\/([a-f0-9-]{36})$/);
+    if (!match) { res.writeHead(404); res.end(); return; }
+    const clip = db.prepare('SELECT path FROM clips WHERE id = ?').get(match[1]);
+    if (!clip) { res.writeHead(404); res.end(); return; }
+    try {
+      const stat = fs.statSync(clip.path);
+      const mime = VIDEO_MIME[path.extname(clip.path).toLowerCase()] || 'video/mp4';
+      const range = req.headers.range;
+      if (range) {
+        const [s, e] = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(s, 10);
+        const end   = e ? parseInt(e, 10) : stat.size - 1;
+        res.writeHead(206, {
+          'Content-Range':  `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges':  'bytes',
+          'Content-Length': end - start + 1,
+          'Content-Type':   mime,
+        });
+        fs.createReadStream(clip.path, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+        fs.createReadStream(clip.path).pipe(res);
+      }
+    } catch (_) { res.writeHead(500); res.end(); }
+  });
+  linkServer.listen(LINK_PORT, '0.0.0.0');
+}
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
 
@@ -228,6 +284,7 @@ app.whenReady().then(() => {
   });
 
   initDb();
+  startLinkServer();
   createWindow();
 
   const watchFolder = getConfig('watch_folder');
